@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <sys/mount.h>
 #include <unistd.h>
 
@@ -11,11 +12,22 @@ static char child_stack[1024*1024];
 static int child_fn() {
     printf("Child: configure\n");
     /* Force our new shell to have a custom home directory */
-    setenv("HOME", "/home/john/projs/namespacefun/roothome/", 1);
+    setenv("HOME", "/root", 1);
     setenv("PS1", "root # ", 1);
     /* Since we did NEWNS, we have our own mount space too, so we'll mount
      * proc from our namespace so that 'ps' works correctly */
-    //system("mount -t proc proc /proc");
+    mount("my-root", "/tmp", "tmpfs", MS_NOEXEC | MS_NOSUID | MS_NODEV, "");
+    mkdir("/tmp/proc", 0777);
+    mkdir("/tmp/bin", 0777);
+    mkdir("/tmp/lib", 0777);
+    mkdir("/tmp/lib64", 0777);
+    mkdir("/tmp/root", 0777);
+    mount("/bin", "/tmp/bin", NULL, MS_BIND | MS_RDONLY, NULL);
+    mount("/lib", "/tmp/lib", NULL, MS_BIND | MS_RDONLY, NULL);
+    mount("/lib64", "/tmp/lib64", NULL, MS_BIND | MS_RDONLY, NULL);
+    mount("roothome", "/tmp/root", NULL, MS_BIND | MS_RDONLY, NULL);
+    chroot("/tmp");
+    chdir("/");
     mount("proc", "/proc", "proc", 0, "");
     /* And exec a shell */
     printf("Child: Starting shell\n");
