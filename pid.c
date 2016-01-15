@@ -6,8 +6,28 @@
 #include <sys/stat.h>
 #include <sys/mount.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <string.h>
 
 static char child_stack[1024*1024];
+
+static int setupIdMaps() {
+    char buf[100];
+    int fd;
+    sprintf(buf, "/proc/%u/uid_map", getpid());
+    fd = open(buf, O_WRONLY);
+    if (fd < 0) {
+        perror(buf);
+        return fd;
+    }
+    sprintf(buf, "0 1000 1\n");
+    ssize_t s = write(fd, buf, strlen(buf));
+    if (s != strlen(buf)) {
+        perror("write");
+        return -2;
+    }
+    return 0;
+}
 
 static int child_fn() {
     printf("Child: configure\n");
@@ -29,6 +49,11 @@ static int child_fn() {
     chroot("/tmp");
     chdir("/");
     mount("proc", "/proc", "proc", 0, "");
+    /* Setup a user id mapping */
+    if (setupIdMaps()) {
+        printf("Child: Error setting user id mapping\n");
+        return 1;
+    }
     /* And exec a shell */
     printf("Child: Starting shell\n");
     execl("/bin/bash", "/bin/bash", "--norc", "--noprofile", NULL);
@@ -37,7 +62,7 @@ static int child_fn() {
 }
 int main() {
     printf("Cloning\n");
-    pid_t child = clone(child_fn, child_stack+1024*1024, CLONE_NEWPID | SIGCHLD | CLONE_NEWNS | CLONE_NEWNET, NULL);
+    pid_t child = clone(child_fn, child_stack+1024*1024, CLONE_NEWPID | SIGCHLD | CLONE_NEWNS | CLONE_NEWNET | CLONE_NEWUSER, NULL);
     if (child == -1) {
         printf("Failed to clone.\n");
         return 1;
