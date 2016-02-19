@@ -12,7 +12,9 @@
 
 static char child_stack[1024*1024];
 
-static int setupIdMaps() {
+static int
+setupIdMaps()
+{
     char buf[100];
     int fd;
     sprintf(buf, "/proc/%u/uid_map", getpid());
@@ -77,7 +79,8 @@ static int setupIdMaps() {
     return 0;
 }
 
-static int mount_fs()
+static int
+mount_fs()
 {
     /* Since we did NEWNS, we have our own mount space too, so we'll mount
      * proc from our namespace so that 'ps' works correctly */
@@ -99,7 +102,9 @@ static int mount_fs()
     return 0;
 }
 
-static int child_fn() {
+static int
+child_fn()
+{
     printf("Child: configure\n");
     /* Force our new shell to have a custom home directory */
     setenv("HOME", "/root", 1);
@@ -128,7 +133,10 @@ static int child_fn() {
     printf("Failed to exec\n");
     return 0;
 }
-int main() {
+
+int
+main()
+{
     printf("You are %i (acting as %i)\n", getuid(), geteuid());
     printf("Cloning\n");
     pid_t child = clone(child_fn, child_stack+1024*1024, CLONE_NEWPID | SIGCHLD | CLONE_NEWNS | CLONE_NEWNET | CLONE_NEWUSER | CLONE_NEWUTS, NULL);
