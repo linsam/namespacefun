@@ -24,6 +24,7 @@ struct info_s {
     uid_t target_uid;
     gid_t target_gid;
     const char *hostname;
+    const char *devsrc;
 };
 
 static int
@@ -92,7 +93,7 @@ setupIdMaps(struct info_s *info)
 }
 
 static int
-mount_fs()
+mount_fs(struct info_s *info)
 {
     /* Since we did NEWNS, we have our own mount space too, so we'll mount
      * proc from our namespace so that 'ps' works correctly */
@@ -107,9 +108,11 @@ mount_fs()
     mkdir("/tmp/root", 0777);
     mkdir("/tmp/etc", 0777);
     /* This doesn't work if host's dev is directly devtmpfs for some reason */
-    if (0 != mount("/dev", "/tmp/dev", NULL, MS_BIND | MS_RDONLY, NULL)) {
+    if (0 != mount(info->devsrc, "/tmp/dev", NULL, MS_BIND | MS_RDONLY, NULL)) {
         perror("c: bind mount /dev");
-        fprintf(stderr, "c: Perhaps try \"sudo mount --bind /dev /dev\" first?\n");
+        fprintf(stderr, "c: Perhaps try \"sudo mount --bind %s %s\" first?\n",
+                info->devsrc,
+                info->devsrc);
         return 1;
     }
     mount("/bin", "/tmp/bin", NULL, MS_BIND | MS_RDONLY, NULL);
@@ -133,7 +136,7 @@ child_fn(void *arg)
     /* Force our new shell to have a custom home directory */
     setenv("HOME", "/root", 1);
     setenv("PS1", "\\[\\e[33m\\]\\u\\[\\e[36m\\]@\\[\\e[31m\\]\\h\\[\\e[0m\\] \\w # ", 1);
-    if (mount_fs() != 0) {
+    if (mount_fs(info) != 0) {
         return 1;
     }
     sethostname(info->hostname, strlen(info->hostname));
@@ -164,8 +167,10 @@ main(int argc, char *argv[])
     struct info_s info = {
         .target_uid = 5,
         .target_gid = 5,
+        .devsrc = "/dev",
     };
     struct option opts[] = {
+        { "dev", required_argument, NULL, 'd' },
         { "uid", required_argument, NULL, 'u' },
         { "gid", required_argument, NULL, 'g' },
         { NULL, 0, NULL, 0 },
@@ -175,6 +180,7 @@ main(int argc, char *argv[])
         "  Starts a new namespace/container named hostname.\n"
         "\n"
         "  Options:\n"
+        "     -d path, --devsrc     Use the given path instead of /dev for devices\n"
         "     -u ID, --uid=ID       Be the given uid in the container (default = 5)\n"
         "     -g ID, --gid=ID       Be the given gid in the container (default = 5)\n"
         ;
@@ -182,6 +188,10 @@ main(int argc, char *argv[])
     int optidx;
     while ((opt = getopt_long(argc, argv, "g:hu:", opts, &optidx)) != -1) {
         switch (opt) {
+            case 'd':
+                /* memory leak: we never free this. */
+                info.devsrc = strdup(optarg);
+                break;
             case 'u':
                 info.target_uid = atoi(optarg);
                 break;
