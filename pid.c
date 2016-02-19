@@ -12,8 +12,18 @@
 
 static char child_stack[1024*1024];
 
+struct info_s {
+    pid_t parent;
+    /* Parent NameSpace User ID */
+    uid_t pns_uid;
+    /* Parent NameSpace Effective User ID */
+    uid_t pns_euid;
+    gid_t pns_gid;
+    gid_t pns_egid;
+};
+
 static int
-setupIdMaps()
+setupIdMaps(struct info_s *info)
 {
     char buf[100];
     int fd;
@@ -23,7 +33,7 @@ setupIdMaps()
         perror(buf);
         return fd;
     }
-    sprintf(buf, "0 1000 1\n");
+    sprintf(buf, "0 %i 1\n", info->pns_euid);
     ssize_t s = write(fd, buf, strlen(buf));
     if (s != strlen(buf)) {
         perror("c: write uid");
@@ -50,16 +60,15 @@ setupIdMaps()
      * Either way we shouldn't drop groups unless we are privileged outside
      * the namespace, or also ignore that error.
      */
-#if 0
     sprintf(buf, "/proc/%u/setgroups", getpid());
     fd = open(buf, O_WRONLY);
     if (fd < 0) {
-        perror(buf);
-        return fd;
+        //perror(buf);
+        //return fd;
+    } else {
+        write(fd, "deny\n", 5);
+        close(fd);
     }
-    write(fd, "deny\n", 5);
-    close(fd);
-#endif
 
     sprintf(buf, "/proc/%u/gid_map", getpid());
     fd = open(buf, O_WRONLY);
@@ -67,8 +76,7 @@ setupIdMaps()
         perror(buf);
         return fd;
     }
-    sprintf(buf, "5 1000 1\n");
-    //sprintf(buf, "5 1000 1\n4 4 1\n");
+    sprintf(buf, "5 %i 1\n", info->pns_egid);
     s = write(fd, buf, strlen(buf));
     if (s != strlen(buf)) {
         perror("c: write gid");
@@ -103,8 +111,9 @@ mount_fs()
 }
 
 static int
-child_fn()
+child_fn(void *arg)
 {
+    struct info_s *info = arg;
     printf("c: configure\n");
     /* Force our new shell to have a custom home directory */
     setenv("HOME", "/root", 1);
@@ -115,7 +124,7 @@ child_fn()
     sethostname("pidtest", 7);
     /* Setup a user id mapping */
     printf("c: You are %i (acting as %i)\n", getuid(), geteuid());
-    if (setupIdMaps()) {
+    if (setupIdMaps(info)) {
         printf("c: Error setting user id mapping\n");
         return 1;
     }
@@ -137,9 +146,14 @@ child_fn()
 int
 main()
 {
+    struct info_s info;
     printf("p: You are %i (acting as %i)\n", getuid(), geteuid());
+    info.pns_uid = getuid();
+    info.pns_euid = geteuid();
+    info.pns_gid = getgid();
+    info.pns_egid = getegid();
     printf("p: Cloning\n");
-    pid_t child = clone(child_fn, child_stack+1024*1024, CLONE_NEWPID | SIGCHLD | CLONE_NEWNS | CLONE_NEWNET | CLONE_NEWUSER | CLONE_NEWUTS, NULL);
+    pid_t child = clone(child_fn, child_stack+1024*1024, CLONE_NEWPID | SIGCHLD | CLONE_NEWNS | CLONE_NEWNET | CLONE_NEWUSER | CLONE_NEWUTS, &info);
     if (child == -1) {
         printf("Failed to clone.\n");
         return 1;
