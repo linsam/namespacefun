@@ -77,11 +77,8 @@ static int setupIdMaps() {
     return 0;
 }
 
-static int child_fn() {
-    printf("Child: configure\n");
-    /* Force our new shell to have a custom home directory */
-    setenv("HOME", "/root", 1);
-    setenv("PS1", "\\u@\\h # ", 1);
+static int mount_fs()
+{
     /* Since we did NEWNS, we have our own mount space too, so we'll mount
      * proc from our namespace so that 'ps' works correctly */
     mount("my-root", "/tmp", "tmpfs", MS_NOEXEC | MS_NOSUID | MS_NODEV, "");
@@ -99,6 +96,17 @@ static int child_fn() {
     chroot("/tmp");
     chdir("/");
     mount("proc", "/proc", "proc", 0, "");
+    return 0;
+}
+
+static int child_fn() {
+    printf("Child: configure\n");
+    /* Force our new shell to have a custom home directory */
+    setenv("HOME", "/root", 1);
+    setenv("PS1", "\\u@\\h # ", 1);
+    if (mount_fs() != 0) {
+        return 1;
+    }
     sethostname("pidtest", 7);
     /* Setup a user id mapping */
     printf("c:You are %i (acting as %i)\n", getuid(), geteuid());
