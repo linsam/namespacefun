@@ -20,6 +20,7 @@ struct info_s {
     uid_t pns_euid;
     gid_t pns_gid;
     gid_t pns_egid;
+    const char *hostname;
 };
 
 static int
@@ -94,12 +95,23 @@ mount_fs()
      * proc from our namespace so that 'ps' works correctly */
     mount("my-root", "/tmp", "tmpfs", MS_NOEXEC | MS_NOSUID | MS_NODEV, "");
     mkdir("/tmp/proc", 0777);
+    mkdir("/tmp/dev", 0777);
     mkdir("/tmp/bin", 0777);
+    mkdir("/tmp/usr", 0777);
+    mkdir("/tmp/sbin", 0777);
     mkdir("/tmp/lib", 0777);
     mkdir("/tmp/lib64", 0777);
     mkdir("/tmp/root", 0777);
     mkdir("/tmp/etc", 0777);
+    /* This doesn't work if host's dev is directly devtmpfs for some reason */
+    if (0 != mount("/dev", "/tmp/dev", NULL, MS_BIND | MS_RDONLY, NULL)) {
+        perror("c: bind mount /dev");
+        fprintf(stderr, "c: Perhaps try \"sudo mount --bind /dev /dev\" first?\n");
+        return 1;
+    }
     mount("/bin", "/tmp/bin", NULL, MS_BIND | MS_RDONLY, NULL);
+    mount("/sbin", "/tmp/sbin", NULL, MS_BIND | MS_RDONLY, NULL);
+    mount("/usr", "/tmp/usr", NULL, MS_BIND | MS_RDONLY, NULL);
     mount("/lib", "/tmp/lib", NULL, MS_BIND | MS_RDONLY, NULL);
     mount("/lib64", "/tmp/lib64", NULL, MS_BIND | MS_RDONLY, NULL);
     mount("roothome", "/tmp/root", NULL, MS_BIND | MS_RDONLY, NULL);
@@ -117,11 +129,11 @@ child_fn(void *arg)
     printf("c: configure\n");
     /* Force our new shell to have a custom home directory */
     setenv("HOME", "/root", 1);
-    setenv("PS1", "\\u@\\h # ", 1);
+    setenv("PS1", "\\[\\e[33m\\]\\u\\[\\e[36m\\]@\\[\\e[31m\\]\\h\\[\\e[0m\\] \\w # ", 1);
     if (mount_fs() != 0) {
         return 1;
     }
-    sethostname("pidtest", 7);
+    sethostname(info->hostname, strlen(info->hostname));
     /* Setup a user id mapping */
     printf("c: You are %i (acting as %i)\n", getuid(), geteuid());
     if (setupIdMaps(info)) {
@@ -144,7 +156,7 @@ child_fn(void *arg)
 }
 
 int
-main()
+main(int argc, char *argv[])
 {
     struct info_s info;
     printf("p: You are %i (acting as %i)\n", getuid(), geteuid());
@@ -152,6 +164,11 @@ main()
     info.pns_euid = geteuid();
     info.pns_gid = getgid();
     info.pns_egid = getegid();
+    if (argc > 1) {
+        info.hostname = argv[1];
+    } else {
+        info.hostname = "pidtest";
+    }
     printf("p: Cloning\n");
     pid_t child = clone(child_fn, child_stack+1024*1024, CLONE_NEWPID | SIGCHLD | CLONE_NEWNS | CLONE_NEWNET | CLONE_NEWUSER | CLONE_NEWUTS, &info);
     if (child == -1) {
