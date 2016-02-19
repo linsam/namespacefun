@@ -26,7 +26,7 @@ setupIdMaps()
     sprintf(buf, "0 1000 1\n");
     ssize_t s = write(fd, buf, strlen(buf));
     if (s != strlen(buf)) {
-        perror("write uid");
+        perror("c: write uid");
         close(fd);
         return -2;
     }
@@ -71,7 +71,7 @@ setupIdMaps()
     //sprintf(buf, "5 1000 1\n4 4 1\n");
     s = write(fd, buf, strlen(buf));
     if (s != strlen(buf)) {
-        perror("write gid");
+        perror("c: write gid");
         close(fd);
         return -2;
     }
@@ -105,7 +105,7 @@ mount_fs()
 static int
 child_fn()
 {
-    printf("Child: configure\n");
+    printf("c: configure\n");
     /* Force our new shell to have a custom home directory */
     setenv("HOME", "/root", 1);
     setenv("PS1", "\\u@\\h # ", 1);
@@ -114,12 +114,12 @@ child_fn()
     }
     sethostname("pidtest", 7);
     /* Setup a user id mapping */
-    printf("c:You are %i (acting as %i)\n", getuid(), geteuid());
+    printf("c: You are %i (acting as %i)\n", getuid(), geteuid());
     if (setupIdMaps()) {
-        printf("Child: Error setting user id mapping\n");
+        printf("c: Error setting user id mapping\n");
         return 1;
     }
-    printf("c:You are %i (acting as %i)\n", getuid(), geteuid());
+    printf("c: You are %i (acting as %i)\n", getuid(), geteuid());
     /* Remove all supplementary groups */
     //setgroups(0, NULL);
 #if 0 /* can't drop privilege if single mapping exists. We are always exactly the single ID we put into the uid_map file. */
@@ -128,31 +128,31 @@ child_fn()
     }
 #endif
     /* And exec a shell */
-    printf("Child: Starting shell\n");
+    printf("c: Starting shell\n");
     execl("/bin/bash", "/bin/bash", "--norc", "--noprofile", NULL);
-    printf("Failed to exec\n");
+    printf("c: Failed to exec\n");
     return 0;
 }
 
 int
 main()
 {
-    printf("You are %i (acting as %i)\n", getuid(), geteuid());
-    printf("Cloning\n");
+    printf("p: You are %i (acting as %i)\n", getuid(), geteuid());
+    printf("p: Cloning\n");
     pid_t child = clone(child_fn, child_stack+1024*1024, CLONE_NEWPID | SIGCHLD | CLONE_NEWNS | CLONE_NEWNET | CLONE_NEWUSER | CLONE_NEWUTS, NULL);
     if (child == -1) {
         printf("Failed to clone.\n");
         return 1;
     }
-    printf("Parent, waiting on child %ld\n", (long)child);
+    printf("p: waiting on child %ld\n", (long)child);
     int status;
     waitpid(child, &status, 0);
     if (WIFEXITED(status)) {
-        printf("Parent: child exited with status %i\n", WEXITSTATUS(status));
+        printf("p: child exited with status %i\n", WEXITSTATUS(status));
     } else if (WIFSIGNALED(status)) {
-        printf("Parent: child terminated with signal %i\n", WTERMSIG(status));
+        printf("p: child terminated with signal %i\n", WTERMSIG(status));
     } else {
-        printf("Parent: something happened wrong\n");
+        printf("p: something happened wrong\n");
     }
     return 0;
 }
