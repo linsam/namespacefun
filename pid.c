@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include <grp.h>
+#include <getopt.h>
 
 static char child_stack[1024*1024];
 
@@ -20,6 +21,8 @@ struct info_s {
     uid_t pns_euid;
     gid_t pns_gid;
     gid_t pns_egid;
+    uid_t target_uid;
+    gid_t target_gid;
     const char *hostname;
 };
 
@@ -34,7 +37,7 @@ setupIdMaps(struct info_s *info)
         perror(buf);
         return fd;
     }
-    sprintf(buf, "0 %i 1\n", info->pns_euid);
+    sprintf(buf, "%i %i 1\n", info->target_uid, info->pns_euid);
     ssize_t s = write(fd, buf, strlen(buf));
     if (s != strlen(buf)) {
         perror("c: write uid");
@@ -77,7 +80,7 @@ setupIdMaps(struct info_s *info)
         perror(buf);
         return fd;
     }
-    sprintf(buf, "5 %i 1\n", info->pns_egid);
+    sprintf(buf, "%i %i 1\n", info->target_uid, info->pns_egid);
     s = write(fd, buf, strlen(buf));
     if (s != strlen(buf)) {
         perror("c: write gid");
@@ -158,14 +161,48 @@ child_fn(void *arg)
 int
 main(int argc, char *argv[])
 {
-    struct info_s info;
+    struct info_s info = {
+        .target_uid = 5,
+        .target_gid = 5,
+    };
+    struct option opts[] = {
+        { "uid", required_argument, NULL, 'u' },
+        { "gid", required_argument, NULL, 'g' },
+        { NULL, 0, NULL, 0 },
+    };
+    const char *help = "Usage: %s [options] [hostname]\n"
+        "\n"
+        "  Starts a new namespace/container named hostname.\n"
+        "\n"
+        "  Options:\n"
+        "     -u ID, --uid=ID       Be the given uid in the container (default = 5)\n"
+        "     -g ID, --gid=ID       Be the given gid in the container (default = 5)\n"
+        ;
+    int flags, opt;
+    int optidx;
+    while ((opt = getopt_long(argc, argv, "g:hu:", opts, &optidx)) != -1) {
+        switch (opt) {
+            case 'u':
+                info.target_uid = atoi(optarg);
+                break;
+            case 'g':
+                info.target_gid = atoi(optarg);
+                break;
+            case 'h':
+                printf(help, argv[0]);
+                return 0;
+            default:
+                fprintf(stderr, help, argv[0]);
+                return 1;
+        }
+    }
     printf("p: You are %i (acting as %i)\n", getuid(), geteuid());
     info.pns_uid = getuid();
     info.pns_euid = geteuid();
     info.pns_gid = getgid();
     info.pns_egid = getegid();
-    if (argc > 1) {
-        info.hostname = argv[1];
+    if (argc > optind) {
+        info.hostname = argv[optind];
     } else {
         info.hostname = "pidtest";
     }
